@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { findAlumnoByRut, loadNominas } from "./utils/nomina";
+import {
+  findAlumnoByRut,
+  guardarSeguimientoAlumno,
+  loadSeguimientoAlumno,
+  loadNominas,
+} from "./utils/nomina";
 import { formatChileanMobile, formatRut, titleCase } from "./utils/rut";
 import { getCountryFlagUrl, getCountryName } from "./utils/country";
 
@@ -98,6 +103,57 @@ function App() {
 
   const faltan = Math.max(alumnos.length - totalLlamados, 0);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const cargarSeguimiento = async () => {
+      if (!alumnoActual || !rutSeleccionado) {
+        return;
+      }
+
+      try {
+        const seguimiento = await loadSeguimientoAlumno(alumnoActual);
+
+        if (cancelled || !seguimiento) {
+          return;
+        }
+
+        if (typeof seguimiento.llamado_por_telefono === "boolean") {
+          setLlamadosPorRut((prev) => ({
+            ...prev,
+            [rutSeleccionado]: seguimiento.llamado_por_telefono,
+          }));
+        }
+
+        if (seguimiento.fecha_examen) {
+          setFechaSeleccionadaPorRut((prev) => ({
+            ...prev,
+            [rutSeleccionado]: seguimiento.fecha_examen,
+          }));
+        }
+
+        setGuardadoPorRut((prev) => ({
+          ...prev,
+          [rutSeleccionado]: Boolean(seguimiento.guardado),
+        }));
+      } catch (err) {
+        if (!cancelled) {
+          setMensajeAccion(
+            err instanceof Error
+              ? `No se pudo cargar el seguimiento guardado: ${err.message}`
+              : "No se pudo cargar el seguimiento guardado.",
+          );
+        }
+      }
+    };
+
+    cargarSeguimiento();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [alumnoActual, rutSeleccionado]);
+
   const registrosGuardados = useMemo(() => {
     return alumnos
       .filter((alumno) => guardadoPorRut[alumno.rutCompleto])
@@ -157,7 +213,7 @@ function App() {
     }));
   };
 
-  const handleGuardar = () => {
+  const handleGuardar = async () => {
     if (!rutSeleccionado) {
       return;
     }
@@ -173,12 +229,30 @@ function App() {
       ...prev,
       [rutSeleccionado]: true,
     }));
-    setMensajeAccion("Datos guardados con éxito.");
+
+    try {
+      if (alumnoActual) {
+        await guardarSeguimientoAlumno(alumnoActual, {
+          llamadoPorTelefono: llamoPorTelefono,
+          fechaExamen,
+          guardado: true,
+        });
+      }
+      setMensajeAccion("Datos guardados con éxito.");
+    } catch (err) {
+      setMensajeAccion(
+        err instanceof Error
+          ? `Guardado local OK, pero no se pudo sincronizar con Supabase: ${err.message}`
+          : "Guardado local OK, pero no se pudo sincronizar con Supabase.",
+      );
+    }
 
     setTimeout(() => {
       setMensajeAccion("");
     }, 1500);
   };
+
+  const botonGuardarTexto = guardado ? "Actualizar" : "Guardar";
 
   const handleExportExcel = async () => {
     if (!registrosGuardados.length) {
@@ -514,7 +588,7 @@ function App() {
                       onClick={handleGuardar}
                       className="inline-flex items-center justify-center rounded-2xl bg-cyan-500 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400"
                     >
-                      Guardar
+                      {botonGuardarTexto}
                     </button>
                     <button
                       type="button"
@@ -541,6 +615,12 @@ function App() {
                         }
                       >
                         {mensajeAccion}
+                      </p>
+                    ) : null}
+                    {guardado ? (
+                      <p className="text-xs text-slate-400">
+                        Este alumno ya tiene un seguimiento guardado; este
+                        botón actualiza el mismo registro.
                       </p>
                     ) : null}
                   </div>

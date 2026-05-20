@@ -1,16 +1,100 @@
-# React + Vite
+# Carelmapu Llamados
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Aplicación en React + Vite para buscar alumnos por RUT, marcar llamado telefónico, elegir fecha de examen y exportar resultados.
 
-Currently, two official plugins are available:
+## Requisitos
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- Node.js 18 o superior
+- Dos archivos Excel en `public/`:
+  - `Nomina Laboral Carelmapu.xlsx`
+  - `Nomina Continuidad Carelmapu.xlsx`
 
-## React Compiler
+## Variables de entorno
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Usa `.env` basado en `.env.example`:
 
-## Expanding the ESLint configuration
+```env
+VITE_SUPABASE_URL=
+VITE_SUPABASE_ANON_KEY=
+SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+`VITE_*` se usa en la app del navegador.
+`SUPABASE_*` se usa en el script de importación.
+
+## Instalar
+
+```bash
+npm install
+```
+
+## Ejecutar
+
+```bash
+npm run dev
+```
+
+## Verificar
+
+```bash
+npm run lint
+npm run build
+```
+
+## Supabase
+
+La app puede funcionar con Excel local o leer desde Supabase si la tabla `alumnos` ya está poblada.
+
+### Tablas recomendadas
+
+`alumnos`
+
+- `id` uuid primary key
+- `origen` text not null
+- `id_excel` text
+- `rut` text
+- `dv` text
+- `nombres` text
+- `apellido_paterno` text
+- `apellido_materno` text
+- `celular` text
+- `telefono_fijo` text
+- `correo` text
+- `pais` text
+- `nacionalidad` text
+- `nivel_certificar` text
+- `estado_tipo` text
+- `nombre_establecimiento` text
+- unique `(origen, rut, dv)`
+
+`seguimientos`
+
+- `id` uuid primary key
+- `origen` text not null
+- `rut` text not null
+- `dv` text not null
+- `nombres` text
+- `apellido_paterno` text
+- `apellido_materno` text
+- `llamado_por_telefono` boolean
+- `fecha_examen` text
+- `guardado` boolean
+- unique `(origen, rut, dv)`
+
+## Importar nóminas a Supabase
+
+1. Crea las tablas.
+2. Agrega las variables de entorno.
+3. Ejecuta:
+
+```bash
+npm run import:nominas
+```
+
+Ese script lee los Excel locales, normaliza los campos y hace `upsert` en `alumnos`.
+
+## Notas
+
+- La app mantiene un modo local si Supabase no está configurado.
+- El guardado intenta sincronizar con `seguimientos` y si falla, conserva el estado local.
