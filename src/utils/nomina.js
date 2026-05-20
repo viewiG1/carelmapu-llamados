@@ -327,3 +327,17 @@ export async function loadSeguimientoAlumno(alumno) {
 
   return byAlumnoId || null;
 }
+
+export async function loadSeguimientos() {
+  if (!supabase) {
+    return [];
+  }
+
+  const { data, error } = await supabase.from("seguimientos").select("*");
+
+  if (error) {
+    throw new Error(`No se pudieron leer los seguimientos desde Supabase: ${error.message}`);
+  }
+
+  return data ?? [];
+}

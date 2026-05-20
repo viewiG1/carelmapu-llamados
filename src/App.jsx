@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   findAlumnoByRut,
   guardarSeguimientoAlumno,
-  loadSeguimientoAlumno,
+  loadSeguimientos,
   loadNominas,
 } from "./utils/nomina";
 import { formatChileanMobile, formatRut, titleCase } from "./utils/rut";
@@ -17,6 +17,7 @@ function App() {
   const [llamadosPorRut, setLlamadosPorRut] = useState({});
   const [fechaSeleccionadaPorRut, setFechaSeleccionadaPorRut] = useState({});
   const [guardadoPorRut, setGuardadoPorRut] = useState({});
+  const [seguimientosDb, setSeguimientosDb] = useState([]);
   const [mensajeAccion, setMensajeAccion] = useState("");
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
@@ -28,12 +29,19 @@ function App() {
       try {
         setCargando(true);
         setError("");
-        const { laboral, continuidad } = await loadNominas();
+        const [nominas, seguimientos] = await Promise.all([
+          loadNominas(),
+          loadSeguimientos().catch((err) => {
+            console.warn("No se pudieron cargar los seguimientos desde Supabase.", err);
+            return [];
+          }),
+        ]);
 
         if (mounted) {
-          setNominaLaboral(laboral);
-          setNominaContinuidad(continuidad);
-          setAlumnos([...laboral, ...continuidad]);
+          setNominaLaboral(nominas.laboral);
+          setNominaContinuidad(nominas.continuidad);
+          setAlumnos([...nominas.laboral, ...nominas.continuidad]);
+          setSeguimientosDb(seguimientos);
         }
       } catch (err) {
         if (mounted) {
@@ -78,22 +86,44 @@ function App() {
       : alumnoEncontrado
     : null;
 
-  const llamoPorTelefono = rutSeleccionado
-    ? Boolean(llamadosPorRut[rutSeleccionado])
-    : false;
+  const seguimientoActual = useMemo(() => {
+    if (!alumnoActual) {
+      return null;
+    }
+
+    return (
+      seguimientosDb.find(
+        (seguimiento) =>
+          seguimiento.origen === alumnoActual.tipo &&
+          seguimiento.rut === alumnoActual.rut &&
+          seguimiento.dv === alumnoActual.dv,
+      ) ?? null
+    );
+  }, [alumnoActual, seguimientosDb]);
 
   const totalLlamados = useMemo(
-    () => Object.values(llamadosPorRut).filter(Boolean).length,
-    [llamadosPorRut],
+    () =>
+      seguimientosDb.filter(
+        (seguimiento) => Boolean(seguimiento.llamado_por_telefono),
+      ).length,
+    [seguimientosDb],
   );
 
-  const fechaExamen = rutSeleccionado
-    ? fechaSeleccionadaPorRut[rutSeleccionado] || ""
-    : "";
+  const llamadoLocal = rutSeleccionado ? llamadosPorRut[rutSeleccionado] : undefined;
+  const fechaLocal = rutSeleccionado ? fechaSeleccionadaPorRut[rutSeleccionado] : "";
+  const guardadoLocal = rutSeleccionado ? guardadoPorRut[rutSeleccionado] : undefined;
 
-  const guardado = rutSeleccionado
-    ? Boolean(guardadoPorRut[rutSeleccionado])
-    : false;
+  const llamoPorTelefono =
+    typeof llamadoLocal === "boolean"
+      ? llamadoLocal
+      : Boolean(seguimientoActual?.llamado_por_telefono);
+
+  const fechaExamen = fechaLocal || seguimientoActual?.fecha_examen || "";
+
+  const guardado =
+    typeof guardadoLocal === "boolean"
+      ? guardadoLocal
+      : Boolean(seguimientoActual?.guardado);
 
   const fechasExamen = [
     "Viernes 5 de junio",
@@ -103,85 +133,41 @@ function App() {
 
   const faltan = Math.max(alumnos.length - totalLlamados, 0);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const cargarSeguimiento = async () => {
-      if (!alumnoActual || !rutSeleccionado) {
-        return;
-      }
-
-      try {
-        const seguimiento = await loadSeguimientoAlumno(alumnoActual);
-
-        if (cancelled || !seguimiento) {
-          return;
-        }
-
-        if (typeof seguimiento.llamado_por_telefono === "boolean") {
-          setLlamadosPorRut((prev) => ({
-            ...prev,
-            [rutSeleccionado]: seguimiento.llamado_por_telefono,
-          }));
-        }
-
-        if (seguimiento.fecha_examen) {
-          setFechaSeleccionadaPorRut((prev) => ({
-            ...prev,
-            [rutSeleccionado]: seguimiento.fecha_examen,
-          }));
-        }
-
-        setGuardadoPorRut((prev) => ({
-          ...prev,
-          [rutSeleccionado]: Boolean(seguimiento.guardado),
-        }));
-      } catch (err) {
-        if (!cancelled) {
-          setMensajeAccion(
-            err instanceof Error
-              ? `No se pudo cargar el seguimiento guardado: ${err.message}`
-              : "No se pudo cargar el seguimiento guardado.",
-          );
-        }
-      }
-    };
-
-    cargarSeguimiento();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [alumnoActual, rutSeleccionado]);
-
   const registrosGuardados = useMemo(() => {
-    return alumnos
-      .filter((alumno) => guardadoPorRut[alumno.rutCompleto])
-      .map((alumno) => {
-        const rutCompleto = alumno.rutCompleto;
-        const fueLlamado = Boolean(llamadosPorRut[rutCompleto]);
-        const fecha = fechaSeleccionadaPorRut[rutCompleto] || "";
+    return seguimientosDb
+      .filter((seguimiento) => Boolean(seguimiento.guardado))
+      .map((seguimiento) => {
+        const alumno = alumnos.find(
+          (item) =>
+            item.tipo === seguimiento.origen &&
+            item.rut === seguimiento.rut &&
+            item.dv === seguimiento.dv,
+        );
+
+        const nombres = alumno
+          ? `${titleCase(alumno.nombres)} ${titleCase(
+              alumno.apellidoPaterno,
+            )} ${titleCase(alumno.apellidoMaterno)}`
+              .replace(/\s+/g, " ")
+              .trim()
+          : "";
 
         return {
-          tipo: alumno.tipo === "laboral" ? "Laboral" : "Continuidad",
+          tipo: seguimiento.origen === "laboral" ? "Laboral" : "Continuidad",
           programa: `Programa ${
-            alumno.tipo === "laboral" ? "Laboral" : "Continuidad"
+            seguimiento.origen === "laboral" ? "Laboral" : "Continuidad"
           }`,
-          periodoCertificacion: String(alumno.nivelACertificar || "")
-            .replace(/\s+/g, " ")
-            .trim(),
-          rut: formatRut(alumno.rut, alumno.dv),
-          nombres: `${titleCase(alumno.nombres)} ${titleCase(
-            alumno.apellidoPaterno,
-          )} ${titleCase(alumno.apellidoMaterno)}`
-            .replace(/\s+/g, " ")
-            .trim(),
-          llamadoPorTelefono: fueLlamado ? "Sí" : "No",
-          fechaExamen: fecha,
+          periodoCertificacion: alumno
+            ? String(alumno.nivelACertificar || "").replace(/\s+/g, " ").trim()
+            : "",
+          rut: formatRut(seguimiento.rut, seguimiento.dv),
+          nombres,
+          llamadoPorTelefono: seguimiento.llamado_por_telefono ? "Sí" : "No",
+          fechaExamen: seguimiento.fecha_examen || "",
           guardado: "Sí",
         };
       });
-  }, [alumnos, guardadoPorRut, llamadosPorRut, fechaSeleccionadaPorRut]);
+  }, [seguimientosDb, alumnos]);
 
   const handleRutChange = (event) => {
     setRutBuscado(event.target.value);
@@ -232,11 +218,25 @@ function App() {
 
     try {
       if (alumnoActual) {
-        await guardarSeguimientoAlumno(alumnoActual, {
+        const saved = await guardarSeguimientoAlumno(alumnoActual, {
           llamadoPorTelefono: llamoPorTelefono,
           fechaExamen,
           guardado: true,
         });
+        if (saved) {
+          setSeguimientosDb((prev) => {
+            const next = prev.filter(
+              (seguimiento) =>
+                !(
+                  seguimiento.origen === saved.origen &&
+                  seguimiento.rut === saved.rut &&
+                  seguimiento.dv === saved.dv
+                ),
+            );
+
+            return [...next, saved];
+          });
+        }
       }
       setMensajeAccion("Datos guardados con éxito.");
     } catch (err) {
