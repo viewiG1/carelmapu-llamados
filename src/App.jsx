@@ -8,6 +8,53 @@ import {
 import { formatChileanMobile, formatRut, titleCase } from "./utils/rut";
 import { getCountryFlagUrl, getCountryName } from "./utils/country";
 
+const TURNOS_EXAMEN_POR_DIA = [
+  {
+    dia: "Viernes 5 de junio",
+    turnos: [{ id: "viernes-1700", hora: "17:00" }],
+  },
+  {
+    dia: "Sábado 6 de junio",
+    turnos: [
+      { id: "sabado-0900", hora: "09:00" },
+      { id: "sabado-1300", hora: "13:00" },
+      { id: "sabado-1700", hora: "17:00" },
+    ],
+  },
+  {
+    dia: "Domingo 7 de junio",
+    turnos: [
+      { id: "domingo-0900", hora: "09:00" },
+      { id: "domingo-1300", hora: "13:00" },
+      { id: "domingo-1700", hora: "17:00" },
+    ],
+  },
+];
+
+const TURNOS_EXAMEN = TURNOS_EXAMEN_POR_DIA.flatMap((grupo) =>
+  grupo.turnos.map((turno) => ({
+    ...turno,
+    dia: grupo.dia,
+    etiqueta: `${grupo.dia} ${turno.hora}`,
+  })),
+);
+
+function turnosDesdeTexto(texto) {
+  const value = String(texto || "");
+  return TURNOS_EXAMEN.filter((turno) => value.includes(turno.etiqueta)).map(
+    (turno) => turno.id,
+  );
+}
+
+function turnosSeleccionadosPorIds(ids) {
+  const seleccionados = new Set(ids || []);
+  return TURNOS_EXAMEN.filter((turno) => seleccionados.has(turno.id));
+}
+
+function formatearTurnosExamen(turnos) {
+  return turnos.map((turno) => turno.etiqueta).join(" · ");
+}
+
 function App() {
   const [alumnos, setAlumnos] = useState([]);
   const [nominaLaboral, setNominaLaboral] = useState([]);
@@ -15,7 +62,7 @@ function App() {
   const [rutBuscado, setRutBuscado] = useState("");
   const [tipoSeleccionado, setTipoSeleccionado] = useState(null);
   const [llamadosPorRut, setLlamadosPorRut] = useState({});
-  const [fechaSeleccionadaPorRut, setFechaSeleccionadaPorRut] = useState({});
+  const [turnosSeleccionadosPorRut, setTurnosSeleccionadosPorRut] = useState({});
   const [guardadoPorRut, setGuardadoPorRut] = useState({});
   const [seguimientosDb, setSeguimientosDb] = useState([]);
   const [mensajeAccion, setMensajeAccion] = useState("");
@@ -110,26 +157,27 @@ function App() {
   );
 
   const llamadoLocal = rutSeleccionado ? llamadosPorRut[rutSeleccionado] : undefined;
-  const fechaLocal = rutSeleccionado ? fechaSeleccionadaPorRut[rutSeleccionado] : "";
+  const turnosLocal = rutSeleccionado ? turnosSeleccionadosPorRut[rutSeleccionado] : undefined;
   const guardadoLocal = rutSeleccionado ? guardadoPorRut[rutSeleccionado] : undefined;
+  const tieneTurnosLocales = Array.isArray(turnosLocal);
 
   const llamoPorTelefono =
     typeof llamadoLocal === "boolean"
       ? llamadoLocal
       : Boolean(seguimientoActual?.llamado_por_telefono);
 
-  const fechaExamen = fechaLocal || seguimientoActual?.fecha_examen || "";
+  const turnosGuardados = turnosDesdeTexto(seguimientoActual?.fecha_examen);
+  const turnosSeleccionadosIds = tieneTurnosLocales ? turnosLocal : turnosGuardados;
+  const turnosSeleccionados = turnosSeleccionadosPorIds(turnosSeleccionadosIds);
+  const turnosExamenTexto = formatearTurnosExamen(turnosSeleccionados);
+  const fechaExamen = tieneTurnosLocales
+    ? turnosExamenTexto
+    : turnosExamenTexto || seguimientoActual?.fecha_examen || "";
 
   const guardado =
     typeof guardadoLocal === "boolean"
       ? guardadoLocal
       : Boolean(seguimientoActual?.guardado);
-
-  const fechasExamen = [
-    "Viernes 5 de junio",
-    "Sábado 6 de junio",
-    "Domingo 7 de junio",
-  ];
 
   const faltan = Math.max(alumnos.length - totalLlamados, 0);
 
@@ -163,6 +211,7 @@ function App() {
           rut: formatRut(seguimiento.rut, seguimiento.dv),
           nombres,
           llamadoPorTelefono: seguimiento.llamado_por_telefono ? "Sí" : "No",
+          turnosExamen: seguimiento.fecha_examen || "",
           fechaExamen: seguimiento.fecha_examen || "",
           guardado: "Sí",
         };
@@ -187,16 +236,25 @@ function App() {
     }));
   };
 
-  const handleFechaExamenChange = (fecha) => {
+  const handleTurnoExamenChange = (turnoId) => {
     if (!rutSeleccionado) {
       return;
     }
 
     setMensajeAccion("");
-    setFechaSeleccionadaPorRut((prev) => ({
-      ...prev,
-      [rutSeleccionado]: fecha,
-    }));
+    setTurnosSeleccionadosPorRut((prev) => {
+      const actuales = Array.isArray(prev[rutSeleccionado])
+        ? prev[rutSeleccionado]
+        : turnosSeleccionadosIds;
+      const next = actuales.includes(turnoId)
+        ? actuales.filter((id) => id !== turnoId)
+        : [...actuales, turnoId];
+
+      return {
+        ...prev,
+        [rutSeleccionado]: next,
+      };
+    });
   };
 
   const handleGuardar = async () => {
@@ -206,7 +264,7 @@ function App() {
 
     if (!llamoPorTelefono || !fechaExamen) {
       setMensajeAccion(
-        "Marca 'Llamó por teléfono' y selecciona la fecha antes de guardar.",
+        "Marca 'Llamó por teléfono' y selecciona al menos un turno antes de guardar.",
       );
       return;
     }
@@ -270,7 +328,7 @@ function App() {
           RUT: registro.rut,
           "Nombre completo": registro.nombres,
           "Llamó por teléfono": registro.llamadoPorTelefono,
-          "Fecha examen": registro.fechaExamen,
+          "Turnos examen": registro.turnosExamen || registro.fechaExamen,
           Guardado: registro.guardado,
         })),
       );
@@ -315,7 +373,7 @@ function App() {
       lines.push(`Programa: ${registro.programa}`);
       lines.push(`Periodo certificara: ${registro.periodoCertificacion || "Sin dato"}`);
       lines.push(`Llamo por telefono: ${registro.llamadoPorTelefono}`);
-      lines.push(`Fecha examen: ${registro.fechaExamen || "Sin dato"}`);
+      lines.push(`Turnos examen: ${registro.turnosExamen || registro.fechaExamen || "Sin dato"}`);
       lines.push("");
     });
 
@@ -557,26 +615,47 @@ function App() {
 
                   <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-5 text-sm text-slate-200">
                     <div className="mb-3 text-sm font-medium text-white">
-                      Fecha del examen
+                      Turnos de examen
                     </div>
-                    <div className="grid gap-2 sm:grid-cols-3">
-                      {fechasExamen.map((fecha) => (
-                        <button
-                          type="button"
-                          key={fecha}
-                          onClick={() => handleFechaExamenChange(fecha)}
-                          className={[
-                            "rounded-2xl border px-3 py-3 text-left text-sm transition",
-                            fechaExamen === fecha
-                              ? "border-cyan-400 bg-cyan-500/20 text-white shadow-sm shadow-cyan-500/10"
-                              : "border-white/10 bg-slate-900 text-slate-200 hover:border-cyan-300/40 hover:bg-slate-900/90",
-                          ].join(" ")}
+                    <div className="space-y-3">
+                      {TURNOS_EXAMEN_POR_DIA.map((grupo) => (
+                        <div
+                          key={grupo.dia}
+                          className="rounded-2xl border border-white/10 bg-slate-900/60 p-3"
                         >
-                          <div className="font-semibold">{fecha.split(" de ")[0]}</div>
-                          <div className="text-xs text-slate-400">{fecha.split(" de ")[1]}</div>
-                        </button>
+                          <div className="text-xs uppercase tracking-[0.22em] text-slate-400">
+                            {grupo.dia}
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {grupo.turnos.map((turno) => {
+                              const activo = turnosSeleccionadosIds.includes(turno.id);
+
+                              return (
+                                <button
+                                  type="button"
+                                  key={turno.id}
+                                  onClick={() => handleTurnoExamenChange(turno.id)}
+                                  className={[
+                                    "rounded-2xl border px-4 py-3 text-left text-sm transition",
+                                    activo
+                                      ? "border-cyan-400 bg-cyan-500/20 text-white shadow-sm shadow-cyan-500/10"
+                                      : "border-white/10 bg-slate-950 text-slate-200 hover:border-cyan-300/40 hover:bg-slate-900/90",
+                                  ].join(" ")}
+                                >
+                                  <div className="font-semibold">{turno.hora}</div>
+                                  <div className="text-xs text-slate-400">
+                                    Disponible
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
                       ))}
                     </div>
+                    <p className="mt-3 text-xs text-cyan-200/80">
+                      Puedes marcar uno o varios turnos. Al guardar se actualiza el mismo seguimiento.
+                    </p>
                     <p className="mt-3 text-xs text-slate-400">
                       Requerido antes de guardar.
                     </p>
@@ -725,8 +804,8 @@ function App() {
                       value={guardado ? "Sí" : "No"}
                     />
                     <StatRow
-                      label="Fecha examen"
-                      value={fechaExamen || "No seleccionada"}
+                      label="Turnos examen"
+                      value={fechaExamen || "No seleccionados"}
                     />
                     <StatRow
                       label="Registros guardados"
