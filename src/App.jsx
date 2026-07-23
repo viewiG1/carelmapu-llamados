@@ -10,23 +10,18 @@ import { getCountryFlagUrl, getCountryName } from "./utils/country";
 
 const TURNOS_EXAMEN_POR_DIA = [
   {
-    dia: "Viernes 5 de junio",
-    turnos: [{ id: "viernes-1700", hora: "17:00" }],
-  },
-  {
-    dia: "Sábado 6 de junio",
+    dia: "Viernes 7 de agosto",
     turnos: [
-      { id: "sabado-0900", hora: "09:00" },
-      { id: "sabado-1300", hora: "13:00" },
-      { id: "sabado-1700", hora: "17:00" },
+      { id: "viernes-1700", hora: "17:00" },
+      { id: "viernes-1830", hora: "18:30" },
     ],
   },
   {
-    dia: "Domingo 7 de junio",
+    dia: "Domingo 9 de agosto",
     turnos: [
       { id: "domingo-0900", hora: "09:00" },
-      { id: "domingo-1300", hora: "13:00" },
-      { id: "domingo-1700", hora: "17:00" },
+      { id: "domingo-1200", hora: "12:00" },
+      { id: "domingo-1400", hora: "14:00" },
     ],
   },
 ];
@@ -132,6 +127,8 @@ function App() {
         : null
       : alumnoEncontrado
     : null;
+
+  const alumnoEnAmbosProgramas = Boolean(alumnoEncontrado?.ambos);
 
   const seguimientoActual = useMemo(() => {
     if (!alumnoActual) {
@@ -598,6 +595,11 @@ function App() {
                       </div>
                     </div>
                   </div>
+                  {alumnoEnAmbosProgramas ? (
+                    <div className="flex items-center rounded-2xl border border-cyan-400/30 bg-cyan-400/10 px-5 py-3 text-sm text-cyan-100 lg:justify-self-end">
+                      Inscrito en ambos programas
+                    </div>
+                  ) : null}
                   <label className="flex items-start gap-3 rounded-2xl border border-white/10 bg-slate-950/60 px-5 py-4 text-sm text-slate-200">
                     <input
                       type="checkbox"
@@ -794,6 +796,16 @@ function App() {
                     <StatRow
                       label="RUT buscado"
                       value={rutBuscado.trim() || "Sin búsqueda"}
+                    />
+                    <StatRow
+                      label="Programas"
+                      value={
+                        alumnoEnAmbosProgramas
+                          ? "Laboral y Continuidad"
+                          : alumnoActual.tipo === "laboral"
+                            ? "Laboral"
+                            : "Continuidad"
+                      }
                     />
                     <StatRow
                       label="Periodo certificará"
