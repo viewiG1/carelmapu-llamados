@@ -89,15 +89,31 @@ function buildAlumno(rowMap, tipo) {
   };
 }
 
-async function loadNominaFromFile(fileName, tipo, sheetName) {
+async function loadNominaFromFile(fileName, tipo, sheetNames) {
   const filePath = path.join(projectRoot, "public", fileName);
+  try {
+    await fs.access(filePath);
+  } catch {
+    if (tipo === "continuidad") {
+      console.warn(`No se encontró ${fileName}; se omite la importación de continuidad.`);
+      return [];
+    }
+
+    throw new Error(`No se encontró el archivo ${fileName} en public/.`);
+  }
+
   const buffer = await fs.readFile(filePath);
   const workbook = XLSX.read(buffer, { type: "buffer" });
-  const sheet = workbook.Sheets[sheetName];
 
-  if (!sheet) {
-    throw new Error(`No se encontró la hoja "${sheetName}" en ${fileName}.`);
+  const sheetName = sheetNames.find((candidate) => workbook.Sheets[candidate]);
+
+  if (!sheetName) {
+    throw new Error(
+      `No se encontró una hoja compatible en ${fileName}. Busqué: ${sheetNames.join(", ")}.`,
+    );
   }
+
+  const sheet = workbook.Sheets[sheetName];
 
   const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
   const headerRowIndex = findHeaderRow(rows);
@@ -132,12 +148,12 @@ async function main() {
   const laboral = await loadNominaFromFile(
     "Nomina Laboral Carelmapu.xlsx",
     "laboral",
-    "Nomina General Laboral",
+    ["Nomina General", "Nomina General Laboral", "Nomina General | BL | ML"],
   );
   const continuidad = await loadNominaFromFile(
     "Nomina Continuidad Carelmapu.xlsx",
     "continuidad",
-    "Nomina General Continuidad",
+    ["Nomina General", "Nomina General Continuidad"],
   );
 
   const alumnos = [...laboral, ...continuidad];

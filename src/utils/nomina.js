@@ -2,8 +2,8 @@ import { normalizeRut, normalizeText } from "./rut";
 import { supabase } from "../lib/supabase";
 
 const SHEET_NAMES = {
-  laboral: "Nomina General Laboral",
-  continuidad: "Nomina General Continuidad",
+  laboral: ["Nomina General", "Nomina General Laboral", "Nomina General | BL | ML"],
+  continuidad: ["Nomina General", "Nomina General Continuidad"],
 };
 
 function getCellText(value) {
@@ -148,11 +148,13 @@ async function loadNominasByTipo(url, tipo) {
   const buffer = await response.arrayBuffer();
   const workbook = XLSX.read(buffer, { type: "array" });
 
-  const sheetName = SHEET_NAMES[tipo];
+  const sheetName = SHEET_NAMES[tipo].find((candidate) => workbook.Sheets[candidate]);
   const sheet = workbook.Sheets[sheetName];
 
   if (!sheet) {
-    throw new Error(`No se encontró la hoja "${sheetName}" en el archivo.`);
+    throw new Error(
+      `No se encontró una hoja compatible para ${tipo} en el archivo.`,
+    );
   }
 
   const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
@@ -182,14 +184,14 @@ export async function loadNominas() {
       console.warn("No se pudo cargar desde Supabase, usando Excel local.", supabaseErr);
     }
 
-    const laboral = await loadNominasByTipo(
-      "/Nomina Laboral Carelmapu.xlsx",
-      "laboral"
-    );
+    const laboral = await loadNominasByTipo("/Nomina Laboral Carelmapu.xlsx", "laboral");
     const continuidad = await loadNominasByTipo(
       "/Nomina Continuidad Carelmapu.xlsx",
-      "continuidad"
-    );
+      "continuidad",
+    ).catch((err) => {
+      console.warn("No se pudo cargar la nómina de continuidad, se continúa solo con laboral.", err);
+      return [];
+    });
 
     return { laboral, continuidad };
   } catch (err) {
