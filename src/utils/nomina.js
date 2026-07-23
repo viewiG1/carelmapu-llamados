@@ -260,10 +260,6 @@ export async function guardarSeguimientoAlumno(alumno, seguimiento) {
 
   const alumnoId = await resolveAlumnoId(alumno);
 
-  if (!alumnoId) {
-    throw new Error("No se pudo resolver el alumno_id para guardar el seguimiento.");
-  }
-
   const payload = {
     alumno_id: alumnoId || null,
     origen: alumno.tipo,
