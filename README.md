@@ -18,10 +18,20 @@ VITE_SUPABASE_URL=
 VITE_SUPABASE_ANON_KEY=
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
+VITE_EXPORT_PASSWORD=
 ```
 
 `VITE_*` se usa en la app del navegador.
 `SUPABASE_*` se usa en el script de importación.
+
+`VITE_EXPORT_PASSWORD` es la clave que protege la descarga (Excel/PDF) y la
+revelación de datos personales en la tabla de registros. Si no se define, se usa
+`carelmapu2025` por defecto. **Cámbiala en producción.**
+
+> Nota de seguridad: esta clave vive en el navegador, así que es un disuasivo
+> (evita descargas accidentales o miradas casuales), no una barrera infranqueable.
+> Para seguridad real hay que proteger los datos en el servidor con políticas RLS
+> de Supabase y autenticación.
 
 ## Instalar
 
