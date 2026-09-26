@@ -294,6 +294,50 @@ body {
   transform: none;
 }
 
+/* Botones de icono (contacto: WhatsApp / correo) */
+.icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  border: 1px solid var(--border-soft);
+  background: var(--surface-1);
+  color: var(--text-1);
+  cursor: pointer;
+  transition: transform 0.12s ease, background 0.2s ease, border-color 0.2s ease;
+}
+.icon-btn:hover {
+  transform: translateY(-1px);
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+}
+.icon-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+.icon-btn-wa {
+  color: #25d366;
+  background: rgba(37, 211, 102, 0.12);
+  border-color: rgba(37, 211, 102, 0.32);
+}
+.icon-btn-wa:hover {
+  background: rgba(37, 211, 102, 0.22);
+}
+.icon-btn-mail {
+  color: #fb7185;
+  background: rgba(251, 113, 133, 0.12);
+  border-color: rgba(251, 113, 133, 0.32);
+}
+.icon-btn-mail:hover {
+  background: rgba(251, 113, 133, 0.22);
+}
+.icon-btn.is-disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 /* Opciones tipo "chip" (programa y turnos) */
 .chip {
   border-radius: 16px;

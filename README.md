@@ -19,6 +19,8 @@ VITE_SUPABASE_ANON_KEY=
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
 VITE_EXPORT_PASSWORD=
+VITE_CONTACT_PHONE=
+VITE_ESTABLECIMIENTO=
 ```
 
 `VITE_*` se usa en la app del navegador.
@@ -26,12 +28,33 @@ VITE_EXPORT_PASSWORD=
 
 `VITE_EXPORT_PASSWORD` es la clave que protege la descarga (Excel/PDF) y la
 revelación de datos personales en la tabla de registros. Si no se define, se usa
-`carelmapu2025` por defecto. **Cámbiala en producción.**
+`carelmapu2026` por defecto. **Cámbiala en producción.**
 
 > Nota de seguridad: esta clave vive en el navegador, así que es un disuasivo
 > (evita descargas accidentales o miradas casuales), no una barrera infranqueable.
 > Para seguridad real hay que proteger los datos en el servidor con políticas RLS
 > de Supabase y autenticación.
+
+`VITE_CONTACT_PHONE` es el número que aparece dentro del mensaje de confirmación
+("...o llamando al X"). Ej: `+56 9 1234 5678`.
+
+`VITE_ESTABLECIMIENTO` es el nombre del colegio que firma el mensaje. Por defecto
+`Colegio de Adultos Carelmapu de Conchalí`.
+
+## Contacto por WhatsApp y correo
+
+En la ficha del alumno y en la tabla de registros hay botones de **WhatsApp** y
+**correo** que abren un chat/redacción con el mensaje de confirmación ya escrito
+(la persona solo presiona enviar):
+
+- **WhatsApp**: usa enlaces `wa.me`. Funciona con número personal, sin cuenta
+  Business ni API. Es semi-manual (un envío por persona), que además es lo más
+  seguro para no arriesgar bloqueos por envío masivo automático.
+- **Correo**: abre la redacción de Gmail (`mail.google.com`) con destinatario,
+  asunto y cuerpo precargados, ideal para el Gmail institucional.
+
+En la tabla, los botones de contacto solo se activan al desbloquear con la clave
+(mismo criterio que la censura de datos personales).
 
 ## Instalar
 

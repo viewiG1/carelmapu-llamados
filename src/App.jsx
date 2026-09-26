@@ -7,20 +7,34 @@ import {
 } from "./utils/nomina";
 import { formatChileanMobile, formatRut, titleCase } from "./utils/rut";
 import { getCountryFlagUrl, getCountryName } from "./utils/country";
+import {
+  ASUNTO_CONFIRMACION,
+  cuerpoCorreo,
+  gmailUrl,
+  mensajeWhatsapp,
+  whatsappUrl,
+} from "./utils/contacto";
 
 const TURNOS_EXAMEN_POR_DIA = [
   {
-    dia: "Viernes 7 de agosto",
+    dia: "Viernes 9 de octubre",
     turnos: [
       { id: "viernes-1700", hora: "17:00", cupo: 40 },
       { id: "viernes-1830", hora: "18:30", cupo: 40 },
     ],
   },
   {
-    dia: "Domingo 9 de agosto",
+    dia: "Sábado 10 de octubre",
     turnos: [
-      { id: "domingo-0900", hora: "09:00", cupo: 200 },
-      { id: "domingo-1200", hora: "12:00", cupo: 200 },
+      { id: "sabado-0900", hora: "09:00", cupo: 300 },
+      { id: "sabado-1300", hora: "13:00", cupo: 300 },
+    ],
+  },
+  {
+    dia: "Domingo 11 de octubre",
+    turnos: [
+      { id: "domingo-1300", hora: "13:00", cupo: 200 },
+      { id: "domingo-1700", hora: "17:00", cupo: 300 },
     ],
   },
 ];
@@ -76,7 +90,7 @@ function getInitials(nombres = "", apellido = "") {
 
 const EXPORT_PASSWORD =
   (typeof import.meta !== "undefined" && import.meta.env?.VITE_EXPORT_PASSWORD) ||
-  "carelmapu2025";
+  "carelmapu2026";
 
 function maskNombre(nombre = "") {
   const limpio = String(nombre).trim();
@@ -122,6 +136,19 @@ function App() {
   const [claveInput, setClaveInput] = useState("");
   const [claveError, setClaveError] = useState("");
   const [accionPendiente, setAccionPendiente] = useState(null);
+  const [modalLista, setModalLista] = useState(false);
+  const [mostrarRegistros, setMostrarRegistros] = useState(false);
+  const [registrosPagina, setRegistrosPagina] = useState(1);
+  const [registrosPorPagina, setRegistrosPorPagina] = useState(10);
+  const [registrosFiltro, setRegistrosFiltro] = useState("");
+  const [registrosFiltroPrograma, setRegistrosFiltroPrograma] = useState("todos");
+  const [registrosFiltroLlamado, setRegistrosFiltroLlamado] = useState("todos");
+  const [registrosFiltroDia, setRegistrosFiltroDia] = useState("todos");
+  const [registrosFiltroHorario, setRegistrosFiltroHorario] = useState("todos");
+  const [listaFiltro, setListaFiltro] = useState("");
+  const [listaOrden, setListaOrden] = useState({ campo: "nombre", dir: "asc" });
+  const [listaPagina, setListaPagina] = useState(1);
+  const [listaPorPagina, setListaPorPagina] = useState(100);
 
   useEffect(() => {
     let mounted = true;
@@ -283,6 +310,8 @@ function App() {
             : "",
           rut: formatRut(seguimiento.rut, seguimiento.dv),
           nombres,
+          celular: alumno?.celular || "",
+          correo: alumno?.correoElectronico || "",
           llamadoPorTelefono: seguimiento.llamado_por_telefono ? "Sí" : "No",
           turnosExamen: seguimiento.fecha_examen || "",
           fechaExamen: seguimiento.fecha_examen || "",
@@ -290,6 +319,37 @@ function App() {
         };
       });
   }, [seguimientosDb, alumnos]);
+
+  const alumnosContactoLista = useMemo(() => {
+    const segByKey = new Map(
+      seguimientosDb.map((seguimiento) => [
+        `${seguimiento.origen}|${seguimiento.rut}|${seguimiento.dv}`,
+        seguimiento,
+      ]),
+    );
+
+    return alumnos.map((alumno) => {
+      const key = `${alumno.tipo}|${alumno.rut}|${alumno.dv}`;
+      const seguimiento = segByKey.get(key);
+      const nombre = `${titleCase(alumno.nombres)} ${titleCase(
+        alumno.apellidoPaterno,
+      )} ${titleCase(alumno.apellidoMaterno)}`
+        .replace(/\s+/g, " ")
+        .trim();
+
+      return {
+        key,
+        nombre,
+        rut: formatRut(alumno.rut, alumno.dv),
+        rutRaw: alumno.rut,
+        tipo: alumno.tipo === "laboral" ? "Laboral" : "Continuidad",
+        celular: alumno.celular,
+        correo: alumno.correoElectronico,
+        turnos: seguimiento?.fecha_examen || "",
+        contactado: Boolean(seguimiento?.llamado_por_telefono),
+      };
+    });
+  }, [alumnos, seguimientosDb]);
 
   const handleRutChange = (event) => {
     setRutBuscado(event.target.value);
@@ -551,6 +611,8 @@ function App() {
       handleExportExcel();
     } else if (accion === "pdf") {
       handleExportPdf();
+    } else if (accion === "lista") {
+      setModalLista(true);
     }
   };
 
@@ -631,6 +693,134 @@ function App() {
   const puedeGuardar = Boolean(llamoPorTelefono && fechaExamen);
   const mensajeEsError = mensajeAccion && !/(éxito|exportad)/i.test(mensajeAccion);
 
+  const horariosDisponibles =
+    registrosFiltroDia === "todos"
+      ? TURNOS_EXAMEN
+      : TURNOS_EXAMEN.filter((turno) => turno.dia === registrosFiltroDia);
+
+  const registrosQuery = registrosFiltro.trim().toLowerCase();
+  const registrosSoloDigitos = registrosQuery.replace(/\D/g, "");
+  const registrosFiltrados = registrosGuardados.filter((registro) => {
+    if (
+      registrosFiltroPrograma !== "todos" &&
+      registro.tipo.toLowerCase() !== registrosFiltroPrograma
+    ) {
+      return false;
+    }
+
+    if (registrosFiltroLlamado !== "todos") {
+      const llamado = registro.llamadoPorTelefono === "Sí";
+      if (registrosFiltroLlamado === "si" && !llamado) {
+        return false;
+      }
+      if (registrosFiltroLlamado === "no" && llamado) {
+        return false;
+      }
+    }
+
+    if (registrosFiltroDia !== "todos" || registrosFiltroHorario !== "todos") {
+      const turnoIds = turnosDesdeTexto(
+        registro.turnosExamen || registro.fechaExamen,
+      );
+
+      if (registrosFiltroHorario !== "todos") {
+        if (!turnoIds.includes(registrosFiltroHorario)) {
+          return false;
+        }
+      } else if (registrosFiltroDia !== "todos") {
+        const enDia = turnoIds.some((id) => {
+          const turno = TURNOS_EXAMEN.find((item) => item.id === id);
+          return turno?.dia === registrosFiltroDia;
+        });
+        if (!enDia) {
+          return false;
+        }
+      }
+    }
+
+    if (!registrosQuery) {
+      return true;
+    }
+
+    const nombreMatch = registro.nombres.toLowerCase().includes(registrosQuery);
+    const rutDigits = registro.rut.replace(/\D/g, "");
+    const rutMatch =
+      registro.rut.toLowerCase().includes(registrosQuery) ||
+      (registrosSoloDigitos && rutDigits.includes(registrosSoloDigitos));
+
+    return nombreMatch || rutMatch;
+  });
+
+  const registrosTotal = registrosFiltrados.length;
+  const registrosTodos = registrosPorPagina === 0;
+  const registrosTotalPaginas = registrosTodos
+    ? 1
+    : Math.max(1, Math.ceil(registrosTotal / registrosPorPagina));
+  const registrosPaginaActual = Math.min(registrosPagina, registrosTotalPaginas);
+  const registrosInicio = registrosTodos
+    ? 0
+    : (registrosPaginaActual - 1) * registrosPorPagina;
+  const registrosPaginados = registrosTodos
+    ? registrosFiltrados
+    : registrosFiltrados.slice(
+        registrosInicio,
+        registrosInicio + registrosPorPagina,
+      );
+
+  const listaContactados = alumnosContactoLista.filter(
+    (item) => item.contactado,
+  ).length;
+  const listaPendientes = alumnosContactoLista.length - listaContactados;
+  const listaQuery = listaFiltro.trim().toLowerCase();
+  const listaSoloDigitos = listaQuery.replace(/\D/g, "");
+  const listaFiltrada = listaQuery
+    ? alumnosContactoLista.filter(
+        (item) =>
+          item.nombre.toLowerCase().includes(listaQuery) ||
+          item.rut.toLowerCase().includes(listaQuery) ||
+          (listaSoloDigitos && item.rutRaw.includes(listaSoloDigitos)),
+      )
+    : alumnosContactoLista;
+
+  const listaOrdenada = [...listaFiltrada].sort((a, b) => {
+    const factor = listaOrden.dir === "asc" ? 1 : -1;
+    let comp;
+
+    if (listaOrden.campo === "estado") {
+      comp = Number(a.contactado) - Number(b.contactado);
+    } else if (listaOrden.campo === "tipo") {
+      comp = a.tipo.localeCompare(b.tipo, "es");
+    } else if (listaOrden.campo === "rut") {
+      comp = a.rutRaw.localeCompare(b.rutRaw, "es", { numeric: true });
+    } else {
+      comp = a.nombre.localeCompare(b.nombre, "es");
+    }
+
+    if (comp === 0 && listaOrden.campo !== "nombre") {
+      comp = a.nombre.localeCompare(b.nombre, "es");
+    }
+
+    return comp * factor;
+  });
+
+  const listaTotal = listaOrdenada.length;
+  const totalPaginas = Math.max(1, Math.ceil(listaTotal / listaPorPagina));
+  const paginaActual = Math.min(listaPagina, totalPaginas);
+  const listaInicio = (paginaActual - 1) * listaPorPagina;
+  const listaPaginada = listaOrdenada.slice(
+    listaInicio,
+    listaInicio + listaPorPagina,
+  );
+
+  const cambiarOrden = (campo) => {
+    setListaOrden((prev) =>
+      prev.campo === campo
+        ? { campo, dir: prev.dir === "asc" ? "desc" : "asc" }
+        : { campo, dir: "asc" },
+    );
+    setListaPagina(1);
+  };
+
   return (
     <div className="min-h-screen px-4 py-6 text-slate-100 sm:px-6 lg:px-10">
       <div className="mx-auto w-full max-w-6xl">
@@ -704,9 +894,19 @@ function App() {
               autoComplete="off"
             />
           </div>
-          <p className="mt-2.5 text-xs text-slate-500">
-            Acepta el RUT con o sin puntos y guion. La búsqueda es instantánea.
-          </p>
+          <div className="mt-2.5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs text-slate-500">
+              Acepta el RUT con o sin puntos y guion. La búsqueda es instantánea.
+            </p>
+            <button
+              type="button"
+              onClick={() => solicitarClave("lista")}
+              className="btn btn-soft !py-2.5"
+            >
+              <Icon name={desbloqueado ? "users" : "lock"} size={16} />
+              Lista de contacto de alumnos
+            </button>
+          </div>
 
           {/* Selector de programa (alumno en ambos) */}
           {alumnoEncontrado?.ambos && !tipoSeleccionado ? (
@@ -837,6 +1037,23 @@ function App() {
                     />
                   }
                   icon={<Icon name="flag" />}
+                />
+              </div>
+
+              <div className="mt-5 flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="text-sm font-semibold text-white">
+                    Contactar para confirmar asistencia
+                  </div>
+                  <div className="mt-0.5 text-xs text-slate-400">
+                    Abre WhatsApp con el mensaje ya escrito.
+                  </div>
+                </div>
+                <ContactActions
+                  nombre={alumnoVisible}
+                  turnos={fechaExamen}
+                  celular={alumnoActual.celular}
+                  correo={alumnoActual.correoElectronico}
                 />
               </div>
             </section>
@@ -1079,22 +1296,125 @@ function App() {
                   {registrosGuardados.length} en total
                 </span>
               </div>
-              <button
-                type="button"
-                onClick={alternarRevelar}
-                className="btn btn-ghost !py-2 !px-3.5 text-xs"
-              >
-                <Icon name={desbloqueado ? "eyeOff" : "eye"} size={15} />
-                {desbloqueado ? "Ocultar datos" : "Mostrar datos"}
-              </button>
+              <div className="flex items-center gap-2">
+                {mostrarRegistros ? (
+                  <button
+                    type="button"
+                    onClick={alternarRevelar}
+                    className="btn btn-ghost !py-2 !px-3.5 text-xs"
+                  >
+                    <Icon name={desbloqueado ? "eyeOff" : "eye"} size={15} />
+                    {desbloqueado ? "Ocultar datos" : "Mostrar datos"}
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => setMostrarRegistros((prev) => !prev)}
+                  className="btn btn-soft !py-2 !px-3.5 text-xs"
+                >
+                  <Icon
+                    name={mostrarRegistros ? "chevronUp" : "chevronDown"}
+                    size={15}
+                  />
+                  {mostrarRegistros ? "Ocultar registros" : "Ver registros"}
+                </button>
+              </div>
             </div>
-            {!desbloqueado ? (
+            {mostrarRegistros && !desbloqueado ? (
               <p className="mb-4 flex items-center gap-2 rounded-xl border border-amber-400/20 bg-amber-400/[0.06] px-3.5 py-2.5 text-xs text-amber-200/90">
                 <Icon name="lock" size={14} />
                 Información personal censurada. Ingresa la clave para ver nombres y
                 RUT completos.
               </p>
             ) : null}
+            {mostrarRegistros ? (
+              <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                <div className="relative flex-1 sm:min-w-[240px]">
+                  <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500">
+                    <Icon name="search" size={16} />
+                  </span>
+                  <input
+                    type="text"
+                    value={registrosFiltro}
+                    onChange={(event) => {
+                      setRegistrosFiltro(event.target.value);
+                      setRegistrosPagina(1);
+                    }}
+                    placeholder="Buscar por nombre o RUT…"
+                    className="search-field !py-3 !pl-11 !text-sm"
+                    autoComplete="off"
+                  />
+                </div>
+                <select
+                  value={registrosFiltroPrograma}
+                  onChange={(event) => {
+                    setRegistrosFiltroPrograma(event.target.value);
+                    setRegistrosPagina(1);
+                  }}
+                  className="rounded-xl border border-white/10 bg-slate-950/60 px-3 py-3 text-sm font-medium text-white outline-none focus:border-cyan-400"
+                >
+                  <option value="todos">Todos los programas</option>
+                  <option value="laboral">Laboral</option>
+                  <option value="continuidad">Continuidad</option>
+                </select>
+                <select
+                  value={registrosFiltroLlamado}
+                  onChange={(event) => {
+                    setRegistrosFiltroLlamado(event.target.value);
+                    setRegistrosPagina(1);
+                  }}
+                  className="rounded-xl border border-white/10 bg-slate-950/60 px-3 py-3 text-sm font-medium text-white outline-none focus:border-cyan-400"
+                >
+                  <option value="todos">Llamado: todos</option>
+                  <option value="si">Llamado: sí</option>
+                  <option value="no">Llamado: no</option>
+                </select>
+                <select
+                  value={registrosFiltroDia}
+                  onChange={(event) => {
+                    setRegistrosFiltroDia(event.target.value);
+                    setRegistrosFiltroHorario("todos");
+                    setRegistrosPagina(1);
+                  }}
+                  className="rounded-xl border border-white/10 bg-slate-950/60 px-3 py-3 text-sm font-medium text-white outline-none focus:border-cyan-400"
+                >
+                  <option value="todos">Todos los días</option>
+                  {TURNOS_EXAMEN_POR_DIA.map((grupo) => (
+                    <option key={grupo.dia} value={grupo.dia}>
+                      {grupo.dia}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={registrosFiltroHorario}
+                  onChange={(event) => {
+                    setRegistrosFiltroHorario(event.target.value);
+                    setRegistrosPagina(1);
+                  }}
+                  disabled={registrosFiltroDia === "todos"}
+                  title={
+                    registrosFiltroDia === "todos"
+                      ? "Selecciona un día para habilitar los horarios"
+                      : undefined
+                  }
+                  className="rounded-xl border border-white/10 bg-slate-950/60 px-3 py-3 text-sm font-medium text-white outline-none focus:border-cyan-400 disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  <option value="todos">
+                    {registrosFiltroDia === "todos"
+                      ? "Elige un día primero"
+                      : "Todos los horarios"}
+                  </option>
+                  {registrosFiltroDia === "todos"
+                    ? null
+                    : horariosDisponibles.map((turno) => (
+                        <option key={turno.id} value={turno.id}>
+                          {turno.hora}
+                        </option>
+                      ))}
+                </select>
+              </div>
+            ) : null}
+            {mostrarRegistros ? (
             <div className="-mx-2 overflow-x-auto">
               <table className="w-full min-w-[640px] border-separate border-spacing-y-1.5 px-2 text-sm">
                 <thead>
@@ -1107,8 +1427,21 @@ function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {registrosGuardados.map((registro, index) => (
-                    <tr key={`${registro.rut}-${index}`} className="text-slate-200">
+                  {registrosPaginados.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={5}
+                        className="rounded-xl bg-white/[0.03] px-3 py-8 text-center text-slate-400"
+                      >
+                        No hay registros que coincidan con la búsqueda.
+                      </td>
+                    </tr>
+                  ) : null}
+                  {registrosPaginados.map((registro, index) => (
+                    <tr
+                      key={`${registro.rut}-${registrosInicio + index}`}
+                      className="text-slate-200"
+                    >
                       <td className="rounded-l-xl bg-white/[0.03] px-3 py-3 font-medium text-white">
                         {desbloqueado
                           ? registro.nombres || "—"
@@ -1127,14 +1460,82 @@ function App() {
                           <span className="badge badge-warn">No</span>
                         )}
                       </td>
-                      <td className="rounded-r-xl bg-white/[0.03] px-3 py-3 text-xs text-slate-400">
-                        {registro.turnosExamen || registro.fechaExamen || "—"}
+                      <td className="rounded-r-xl bg-white/[0.03] px-3 py-3">
+                        <TurnosBadges
+                          texto={registro.turnosExamen || registro.fechaExamen}
+                        />
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+            ) : null}
+            {mostrarRegistros ? (
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-3 text-xs text-slate-400">
+                <div className="flex items-center gap-2">
+                  <span>Mostrar</span>
+                  <select
+                    value={registrosPorPagina}
+                    onChange={(event) => {
+                      setRegistrosPorPagina(Number(event.target.value));
+                      setRegistrosPagina(1);
+                    }}
+                    className="rounded-lg border border-white/10 bg-slate-950/60 px-2 py-1.5 font-medium text-white outline-none focus:border-cyan-400"
+                  >
+                    <option value={10}>10</option>
+                    <option value={20}>20</option>
+                    <option value={50}>50</option>
+                    <option value={0}>Todos</option>
+                  </select>
+                  <span>por página</span>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <span>
+                    {registrosTotal === 0
+                      ? "0 registros"
+                      : registrosTodos
+                        ? `${registrosTotal} de ${registrosTotal}`
+                        : `${registrosInicio + 1}–${Math.min(
+                            registrosInicio + registrosPorPagina,
+                            registrosTotal,
+                          )} de ${registrosTotal}`}
+                  </span>
+                  {!registrosTodos ? (
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setRegistrosPagina(Math.max(1, registrosPaginaActual - 1))
+                        }
+                        disabled={registrosPaginaActual <= 1}
+                        className="icon-btn !h-9 !w-9 disabled:opacity-35"
+                        aria-label="Página anterior"
+                      >
+                        <Icon name="chevronLeft" size={16} />
+                      </button>
+                      <span className="min-w-[64px] text-center font-medium text-slate-200">
+                        {registrosPaginaActual} / {registrosTotalPaginas}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setRegistrosPagina(
+                            Math.min(registrosTotalPaginas, registrosPaginaActual + 1),
+                          )
+                        }
+                        disabled={registrosPaginaActual >= registrosTotalPaginas}
+                        className="icon-btn !h-9 !w-9 disabled:opacity-35"
+                        aria-label="Página siguiente"
+                      >
+                        <Icon name="chevronRight" size={16} />
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
           </section>
         ) : null}
 
@@ -1166,7 +1567,9 @@ function App() {
                 <p className="text-xs text-slate-400">
                   {accionPendiente === "revelar"
                     ? "Ingresa la clave para ver los datos."
-                    : "Ingresa la clave para descargar."}
+                    : accionPendiente === "lista"
+                      ? "Ingresa la clave para ver la lista de contacto."
+                      : "Ingresa la clave para descargar."}
                 </p>
               </div>
             </div>
@@ -1206,6 +1609,305 @@ function App() {
             </form>
           </div>
         </div>
+      ) : null}
+
+      {/* ===================== Modal lista de contacto ===================== */}
+      {modalLista ? (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center bg-slate-950/75 p-4 backdrop-blur-sm sm:items-center"
+          onClick={() => setModalLista(false)}
+          role="presentation"
+        >
+          <div
+            className="glass flex max-h-[90vh] w-full max-w-4xl flex-col p-5 fade-in-up sm:p-6"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Lista de contacto de alumnos"
+          >
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-bold text-white">
+                  Lista de contacto de alumnos
+                </h3>
+                <p className="mt-0.5 text-xs text-slate-400">
+                  Los alumnos ya contactados quedan bloqueados. Envía WhatsApp a
+                  los pendientes.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalLista(false)}
+                className="icon-btn"
+                aria-label="Cerrar"
+                title="Cerrar"
+              >
+                <Icon name="close" size={18} />
+              </button>
+            </div>
+
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <span className="badge badge-muted">
+                {alumnosContactoLista.length} en total
+              </span>
+              <span className="badge badge-ok">{listaContactados} contactados</span>
+              <span className="badge badge-warn">{listaPendientes} pendientes</span>
+            </div>
+
+            <div className="relative mb-3">
+              <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500">
+                <Icon name="search" size={16} />
+              </span>
+              <input
+                type="text"
+                value={listaFiltro}
+                onChange={(event) => {
+                  setListaFiltro(event.target.value);
+                  setListaPagina(1);
+                }}
+                placeholder="Filtrar por nombre o RUT…"
+                className="search-field !py-3 !pl-11 !text-sm"
+                autoComplete="off"
+              />
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-auto">
+              <table className="w-full min-w-[560px] border-separate border-spacing-y-1.5 text-sm">
+                <thead className="sticky top-0 z-10">
+                  <tr>
+                    <SortHeader label="Alumno" campo="nombre" orden={listaOrden} onSort={cambiarOrden} />
+                    <SortHeader label="RUT" campo="rut" orden={listaOrden} onSort={cambiarOrden} />
+                    <SortHeader label="Programa" campo="tipo" orden={listaOrden} onSort={cambiarOrden} />
+                    <SortHeader label="Estado" campo="estado" orden={listaOrden} onSort={cambiarOrden} />
+                    <th className="bg-slate-950/80 px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-slate-400 backdrop-blur">
+                      Contacto
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {listaPaginada.length ? (
+                    listaPaginada.map((item) => (
+                      <tr key={item.key} className="text-slate-200">
+                        <td className="rounded-l-xl bg-white/[0.03] px-3 py-2.5 font-medium text-white">
+                          {item.nombre || "—"}
+                        </td>
+                        <td className="bg-white/[0.03] px-3 py-2.5 text-slate-300">
+                          {item.rut}
+                        </td>
+                        <td className="bg-white/[0.03] px-3 py-2.5">
+                          <span className="badge badge-muted">{item.tipo}</span>
+                        </td>
+                        <td className="bg-white/[0.03] px-3 py-2.5">
+                          {item.contactado ? (
+                            <span className="badge badge-ok">
+                              <Icon name="check" size={12} />
+                              Contactado
+                            </span>
+                          ) : (
+                            <span className="badge badge-warn">Pendiente</span>
+                          )}
+                        </td>
+                        <td className="rounded-r-xl bg-white/[0.03] px-3 py-2.5">
+                          <div className="flex justify-end">
+                            <ContactActions
+                              nombre={item.nombre}
+                              turnos={item.turnos}
+                              celular={item.celular}
+                              correo={item.correo}
+                              disabled={item.contactado}
+                              size={16}
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td
+                        colSpan={5}
+                        className="rounded-xl bg-white/[0.03] px-3 py-8 text-center text-slate-400"
+                      >
+                        No hay alumnos que coincidan con el filtro.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-3 text-xs text-slate-400">
+              <div className="flex items-center gap-2">
+                <span>Mostrar</span>
+                <select
+                  value={listaPorPagina}
+                  onChange={(event) => {
+                    setListaPorPagina(Number(event.target.value));
+                    setListaPagina(1);
+                  }}
+                  className="rounded-lg border border-white/10 bg-slate-950/60 px-2 py-1.5 font-medium text-white outline-none focus:border-cyan-400"
+                >
+                  <option value={10}>10</option>
+                  <option value={100}>100</option>
+                  <option value={500}>500</option>
+                </select>
+                <span>por página</span>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <span>
+                  {listaTotal === 0
+                    ? "0 resultados"
+                    : `${listaInicio + 1}–${Math.min(
+                        listaInicio + listaPorPagina,
+                        listaTotal,
+                      )} de ${listaTotal}`}
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setListaPagina(Math.max(1, paginaActual - 1))}
+                    disabled={paginaActual <= 1}
+                    className="icon-btn !h-9 !w-9 disabled:opacity-35"
+                    aria-label="Página anterior"
+                  >
+                    <Icon name="chevronLeft" size={16} />
+                  </button>
+                  <span className="min-w-[64px] text-center font-medium text-slate-200">
+                    {paginaActual} / {totalPaginas}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setListaPagina(Math.min(totalPaginas, paginaActual + 1))
+                    }
+                    disabled={paginaActual >= totalPaginas}
+                    className="icon-btn !h-9 !w-9 disabled:opacity-35"
+                    aria-label="Página siguiente"
+                  >
+                    <Icon name="chevronRight" size={16} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function TurnosBadges({ texto }) {
+  const turnos = turnosSeleccionadosPorIds(turnosDesdeTexto(texto));
+  const items = turnos.length
+    ? turnos.map((turno) => ({ dia: turno.dia, hora: turno.hora }))
+    : String(texto || "")
+        .split("·")
+        .map((parte) => parte.trim())
+        .filter(Boolean)
+        .map((etiqueta) => ({ dia: etiqueta, hora: "" }));
+
+  if (!items.length) {
+    return <span className="text-slate-500">—</span>;
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      {items.map((item, index) => (
+        <span
+          key={`${item.dia}-${item.hora}-${index}`}
+          className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-cyan-400/20 bg-cyan-400/[0.06] px-2.5 py-1"
+        >
+          <Icon name="clock" size={12} />
+          {item.hora ? (
+            <span className="text-sm font-semibold text-white">{item.hora}</span>
+          ) : null}
+          <span className="text-xs text-slate-300">{item.dia}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function SortHeader({ label, campo, orden, onSort }) {
+  const activo = orden.campo === campo;
+
+  return (
+    <th className="bg-slate-950/80 px-3 py-2 text-left backdrop-blur">
+      <button
+        type="button"
+        onClick={() => onSort(campo)}
+        className={`inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wider transition ${
+          activo ? "text-cyan-200" : "text-slate-400 hover:text-slate-200"
+        }`}
+      >
+        {label}
+        <span className={activo ? "opacity-100" : "opacity-30"}>
+          <Icon
+            name={activo && orden.dir === "desc" ? "chevronDown" : "chevronUp"}
+            size={13}
+          />
+        </span>
+      </button>
+    </th>
+  );
+}
+
+// Correo desactivado temporalmente. Cambiar a true para volver a mostrar el
+// botón de Gmail junto al de WhatsApp.
+const GMAIL_HABILITADO = false;
+
+function ContactActions({
+  nombre,
+  turnos,
+  celular,
+  correo,
+  disabled = false,
+  size = 18,
+}) {
+  const wa = whatsappUrl(celular, mensajeWhatsapp({ nombre, turnos }));
+  const mail = gmailUrl(
+    correo,
+    ASUNTO_CONFIRMACION,
+    cuerpoCorreo({ nombre, turnos }),
+  );
+  const waDisabled = disabled || !wa;
+  const mailDisabled = disabled || !mail;
+
+  return (
+    <div className="flex items-center gap-2">
+      <a
+        className={`icon-btn icon-btn-wa ${waDisabled ? "is-disabled" : ""}`}
+        href={waDisabled ? undefined : wa}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="Enviar WhatsApp"
+        title={
+          disabled
+            ? "Desbloquea para contactar"
+            : wa
+              ? "Enviar WhatsApp"
+              : "Sin celular registrado"
+        }
+      >
+        <Icon name="whatsapp" size={size} />
+      </a>
+      {GMAIL_HABILITADO ? (
+        <a
+          className={`icon-btn icon-btn-mail ${mailDisabled ? "is-disabled" : ""}`}
+          href={mailDisabled ? undefined : mail}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Enviar correo"
+          title={
+            disabled
+              ? "Desbloquea para contactar"
+              : mail
+                ? "Enviar correo"
+                : "Sin correo registrado"
+          }
+        >
+          <Icon name="mail" size={size} />
+        </a>
       ) : null}
     </div>
   );
@@ -1275,12 +1977,13 @@ function CountryDisplay({ country }) {
 }
 
 function Icon({ name, size = 16 }) {
+  const filled = name === "whatsapp";
   const common = {
     width: size,
     height: size,
     viewBox: "0 0 24 24",
-    fill: "none",
-    stroke: "currentColor",
+    fill: filled ? "currentColor" : "none",
+    stroke: filled ? "none" : "currentColor",
     strokeWidth: 2,
     strokeLinecap: "round",
     strokeLinejoin: "round",
@@ -1305,6 +2008,12 @@ function Icon({ name, size = 16 }) {
     unlock: <><rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 7.5-1.9" /></>,
     eye: <><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" /></>,
     eyeOff: <><path d="M9.9 5.2A9.7 9.7 0 0 1 12 5c6.5 0 10 7 10 7a13.2 13.2 0 0 1-2.4 3.1M6.1 6.1A13.3 13.3 0 0 0 2 12s3.5 7 10 7a9.7 9.7 0 0 0 4-.9M3 3l18 18M9.9 9.9a3 3 0 0 0 4.2 4.2" /></>,
+    whatsapp: <path d="M12 3a9 9 0 0 0-7.7 13.6L3 21l4.5-1.2A9 9 0 1 0 12 3Zm-3.3 5c.2 0 .3 0 .5.4l.7 1.6c.1.2 0 .4-.1.5l-.5.6c-.1.2-.2.3 0 .6a7 7 0 0 0 3 2.6c.3.1.4 0 .6-.1l.6-.7c.2-.2.3-.2.5-.1l1.6.8c.2.1.3.2.3.4 0 .8-.6 1.5-1.3 1.6-.6.1-1.3.2-3.4-.7a8 8 0 0 1-3.9-4c-.3-.7-.5-1.5-.5-2.1 0-.9.5-1.5 1.1-1.6h.5Z" />,
+    close: <path d="M18 6 6 18M6 6l12 12" />,
+    chevronUp: <path d="m6 15 6-6 6 6" />,
+    chevronDown: <path d="m6 9 6 6 6-6" />,
+    chevronLeft: <path d="m15 18-6-6 6-6" />,
+    chevronRight: <path d="m9 18 6-6-6-6" />,
   };
 
   return (

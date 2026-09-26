@@ -148,15 +148,49 @@ async function main() {
   const laboral = await loadNominaFromFile(
     "Nomina Laboral Carelmapu.xlsx",
     "laboral",
-    ["Nomina General", "Nomina General Laboral", "Nomina General | BL | ML"],
+    [
+      "Nómina Laboral",
+      "Nomina Laboral",
+      "Nomina General",
+      "Nomina General Laboral",
+      "Nomina General | BL | ML",
+    ],
   );
   const continuidad = await loadNominaFromFile(
     "Nomina Continuidad Carelmapu.xlsx",
     "continuidad",
-    ["Nomina General", "Nomina General Continuidad"],
+    [
+      "Nomina Continuidad",
+      "Nómina Continuidad",
+      "Nomina General",
+      "Nomina General Continuidad",
+    ],
   );
 
-  const alumnos = [...laboral, ...continuidad];
+  const combinados = [...laboral, ...continuidad];
+
+  // Dedup por (origen, rut, dv): el upsert no puede tocar la misma fila dos
+  // veces en una sola operación. Nos quedamos con la última aparición.
+  const porClave = new Map();
+  let sinRut = 0;
+  for (const alumno of combinados) {
+    if (!alumno.rut) {
+      sinRut += 1;
+      continue;
+    }
+    porClave.set(`${alumno.origen}|${alumno.rut}|${alumno.dv}`, alumno);
+  }
+
+  const alumnos = [...porClave.values()];
+  const duplicados = combinados.length - sinRut - alumnos.length;
+
+  if (sinRut) {
+    console.warn(`Se omitieron ${sinRut} fila(s) sin RUT.`);
+  }
+  if (duplicados) {
+    console.warn(`Se combinaron ${duplicados} fila(s) duplicada(s) por (origen, rut, dv).`);
+  }
+
   const { error } = await supabase.from("alumnos").upsert(alumnos, {
     onConflict: "origen,rut,dv",
   });

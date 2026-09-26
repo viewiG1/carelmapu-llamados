@@ -2,8 +2,19 @@ import { normalizeRut, normalizeText } from "./rut";
 import { supabase } from "../lib/supabase";
 
 const SHEET_NAMES = {
-  laboral: ["Nomina General", "Nomina General Laboral", "Nomina General | BL | ML"],
-  continuidad: ["Nomina General", "Nomina General Continuidad"],
+  laboral: [
+    "Nómina Laboral",
+    "Nomina Laboral",
+    "Nomina General",
+    "Nomina General Laboral",
+    "Nomina General | BL | ML",
+  ],
+  continuidad: [
+    "Nomina Continuidad",
+    "Nómina Continuidad",
+    "Nomina General",
+    "Nomina General Continuidad",
+  ],
 };
 
 function getCellText(value) {
@@ -105,16 +116,45 @@ function mapDbAlumnoRow(row, tipoFallback = "") {
   };
 }
 
+// Supabase/PostgREST devuelve como máximo 1000 filas por consulta. Paginamos
+// con .range() para traer todas las filas de una tabla.
+async function fetchAllRows(tabla) {
+  const PAGE_SIZE = 1000;
+  const todas = [];
+  let desde = 0;
+
+  for (;;) {
+    const { data, error } = await supabase
+      .from(tabla)
+      .select("*")
+      .range(desde, desde + PAGE_SIZE - 1);
+
+    if (error) {
+      throw new Error(`No se pudo leer ${tabla} desde Supabase: ${error.message}`);
+    }
+
+    if (!data?.length) {
+      break;
+    }
+
+    todas.push(...data);
+
+    if (data.length < PAGE_SIZE) {
+      break;
+    }
+
+    desde += PAGE_SIZE;
+  }
+
+  return todas;
+}
+
 async function loadNominasDesdeSupabase() {
   if (!supabase) {
     return null;
   }
 
-  const { data, error } = await supabase.from("alumnos").select("*");
-
-  if (error) {
-    throw new Error(`No se pudo leer alumnos desde Supabase: ${error.message}`);
-  }
+  const data = await fetchAllRows("alumnos");
 
   if (!data?.length) {
     return null;
@@ -331,11 +371,5 @@ export async function loadSeguimientos() {
     return [];
   }
 
-  const { data, error } = await supabase.from("seguimientos").select("*");
-
-  if (error) {
-    throw new Error(`No se pudieron leer los seguimientos desde Supabase: ${error.message}`);
-  }
-
-  return data ?? [];
+  return fetchAllRows("seguimientos");
 }
