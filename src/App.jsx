@@ -198,38 +198,56 @@ function App() {
     [nominaLaboral, nominaContinuidad, rutBuscado],
   );
 
+  const alumnoEnAmbosProgramas = Boolean(alumnoEncontrado?.ambos);
+
+  // Si está en ambos programas y aún no eligió, se muestra Laboral por defecto
+  // (el usuario puede cambiar con el conmutador, sin volver a buscar el RUT).
+  const tipoEfectivo = alumnoEnAmbosProgramas
+    ? tipoSeleccionado || "laboral"
+    : tipoSeleccionado;
+
   const rutSeleccionado = alumnoEncontrado
     ? alumnoEncontrado.ambos
-      ? tipoSeleccionado
-        ? alumnoEncontrado[tipoSeleccionado]?.rutCompleto ?? ""
-        : ""
+      ? alumnoEncontrado[tipoEfectivo]?.rutCompleto ?? ""
       : alumnoEncontrado.rutCompleto ?? ""
     : "";
 
   const alumnoActual = alumnoEncontrado
     ? alumnoEncontrado.ambos
-      ? tipoSeleccionado
-        ? alumnoEncontrado[tipoSeleccionado]
-        : null
+      ? alumnoEncontrado[tipoEfectivo]
       : alumnoEncontrado
     : null;
-
-  const alumnoEnAmbosProgramas = Boolean(alumnoEncontrado?.ambos);
 
   const seguimientoActual = useMemo(() => {
     if (!alumnoActual) {
       return null;
     }
 
-    return (
-      seguimientosDb.find(
-        (seguimiento) =>
-          seguimiento.origen === alumnoActual.tipo &&
-          seguimiento.rut === alumnoActual.rut &&
-          seguimiento.dv === alumnoActual.dv,
-      ) ?? null
+    const exacto = seguimientosDb.find(
+      (seguimiento) =>
+        seguimiento.origen === alumnoActual.tipo &&
+        seguimiento.rut === alumnoActual.rut &&
+        seguimiento.dv === alumnoActual.dv,
     );
-  }, [alumnoActual, seguimientosDb]);
+
+    if (exacto) {
+      return exacto;
+    }
+
+    // Si el alumno está en ambos programas, reutiliza el seguimiento del otro
+    // programa para que se muestre lo mismo (llamado y día) sin repetir.
+    if (alumnoEnAmbosProgramas) {
+      return (
+        seguimientosDb.find(
+          (seguimiento) =>
+            seguimiento.rut === alumnoActual.rut &&
+            seguimiento.dv === alumnoActual.dv,
+        ) ?? null
+      );
+    }
+
+    return null;
+  }, [alumnoActual, seguimientosDb, alumnoEnAmbosProgramas]);
 
   const totalLlamados = useMemo(
     () =>
@@ -241,13 +259,19 @@ function App() {
 
   const ocupacionPorTurno = useMemo(() => {
     const conteo = {};
+    const personasPorTurno = {};
     for (const turno of TURNOS_EXAMEN) {
       conteo[turno.id] = 0;
+      personasPorTurno[turno.id] = new Set();
     }
 
     for (const seguimiento of seguimientosDb) {
+      // Un alumno en ambos programas tiene el mismo rut+dv: se cuenta una vez
+      // por turno para no duplicar el cupo.
+      const persona = `${seguimiento.rut}|${seguimiento.dv}`;
       for (const turnoId of turnosDesdeTexto(seguimiento.fecha_examen)) {
-        if (conteo[turnoId] != null) {
+        if (conteo[turnoId] != null && !personasPorTurno[turnoId].has(persona)) {
+          personasPorTurno[turnoId].add(persona);
           conteo[turnoId] += 1;
         }
       }
@@ -408,8 +432,17 @@ function App() {
     }));
 
     try {
-      if (alumnoActual) {
-        const saved = await guardarSeguimientoAlumno(alumnoActual, {
+      // Si el alumno está en ambos programas, se guarda lo mismo en los dos
+      // (laboral y continuidad) para indicar el mismo llamado y día una sola vez.
+      const objetivos =
+        alumnoEnAmbosProgramas && alumnoEncontrado
+          ? [alumnoEncontrado.laboral, alumnoEncontrado.continuidad]
+          : alumnoActual
+            ? [alumnoActual]
+            : [];
+
+      for (const objetivo of objetivos) {
+        const saved = await guardarSeguimientoAlumno(objetivo, {
           llamadoPorTelefono: llamoPorTelefono,
           fechaExamen,
           guardado: true,
@@ -429,7 +462,11 @@ function App() {
           });
         }
       }
-      setMensajeAccion("Datos guardados con éxito.");
+      setMensajeAccion(
+        alumnoEnAmbosProgramas
+          ? "Datos guardados en ambos programas con éxito."
+          : "Datos guardados con éxito.",
+      );
     } catch (err) {
       setMensajeAccion(
         err instanceof Error
@@ -908,33 +945,15 @@ function App() {
             </button>
           </div>
 
-          {/* Selector de programa (alumno en ambos) */}
-          {alumnoEncontrado?.ambos && !tipoSeleccionado ? (
-            <div className="mt-6 rounded-2xl border border-cyan-400/25 bg-cyan-400/[0.06] p-5 fade-in-up">
-              <div className="mb-1 flex items-center gap-2 text-base font-semibold text-white">
-                <Icon name="branch" />
-                Alumno inscrito en ambos programas
-              </div>
-              <p className="mb-4 text-sm text-slate-300">
-                Selecciona con cuál programa quieres trabajar:
-              </p>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {[
-                  { val: "laboral", label: "Laboral", desc: "Programa laboral" },
-                  { val: "continuidad", label: "Continuidad", desc: "Continuidad de estudios" },
-                ].map(({ val, label, desc }) => (
-                  <button
-                    key={val}
-                    type="button"
-                    onClick={() => setTipoSeleccionado(val)}
-                    data-active={tipoSeleccionado === val}
-                    className="chip"
-                  >
-                    <div className="text-sm font-semibold text-white">{label}</div>
-                    <div className="mt-0.5 text-xs text-slate-400">{desc}</div>
-                  </button>
-                ))}
-              </div>
+          {/* Aviso: alumno en ambos programas (la ficha aparece abajo con el
+              conmutador para cambiar entre Laboral y Continuidad). */}
+          {alumnoEnAmbosProgramas ? (
+            <div className="mt-6 flex items-center gap-2 rounded-2xl border border-cyan-400/25 bg-cyan-400/[0.06] px-5 py-3.5 text-sm text-cyan-100 fade-in-up">
+              <Icon name="branch" size={16} />
+              <span>
+                Alumno inscrito en <b>ambos programas</b>. Abajo puedes cambiar
+                entre Laboral y Continuidad; lo que guardes se aplica a los dos.
+              </span>
             </div>
           ) : null}
         </section>
@@ -994,6 +1013,34 @@ function App() {
                   </div>
                 </div>
               </div>
+
+              {alumnoEnAmbosProgramas ? (
+                <div className="mt-4">
+                  <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                    Programa que estás viendo
+                  </div>
+                  <div className="inline-flex rounded-xl border border-white/10 bg-slate-950/40 p-1">
+                    {[
+                      { val: "laboral", label: "Laboral" },
+                      { val: "continuidad", label: "Continuidad" },
+                    ].map(({ val, label }) => (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => setTipoSeleccionado(val)}
+                        data-active={tipoEfectivo === val}
+                        className={`rounded-lg px-4 py-1.5 text-sm font-semibold transition ${
+                          tipoEfectivo === val
+                            ? "bg-cyan-400/15 text-cyan-100"
+                            : "text-slate-400 hover:text-slate-200"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
 
               <div className="my-6 h-px bg-white/10" />
 
@@ -1183,6 +1230,14 @@ function App() {
                     Puedes marcar uno o varios turnos. Cada turno tiene un cupo máximo.
                   </p>
                 </div>
+
+                {alumnoEnAmbosProgramas ? (
+                  <p className="mt-4 flex items-start gap-2 rounded-xl border border-cyan-400/20 bg-cyan-400/[0.06] px-3.5 py-2.5 text-xs text-cyan-100/90">
+                    <Icon name="branch" size={14} />
+                    Este alumno está en ambos programas. El llamado y el día se
+                    guardarán igual para Laboral y Continuidad.
+                  </p>
+                ) : null}
 
                 {/* Guardar */}
                 <button
