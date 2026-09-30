@@ -494,7 +494,7 @@ function App() {
         registrosGuardados.map((registro) => ({
           Tipo: registro.tipo,
           Programa: registro.programa,
-          "Periodo certificará": registro.periodoCertificacion,
+          "Nivel a certificar": registro.periodoCertificacion,
           RUT: registro.rut,
           "Nombre completo": registro.nombres,
           "Llamó por teléfono": registro.llamadoPorTelefono,
@@ -541,7 +541,7 @@ function App() {
       lines.push(`${index + 1}. ${registro.nombres}`);
       lines.push(`RUT: ${registro.rut}`);
       lines.push(`Programa: ${registro.programa}`);
-      lines.push(`Periodo certificara: ${registro.periodoCertificacion || "Sin dato"}`);
+      lines.push(`Nivel a certificar: ${registro.periodoCertificacion || "Sin dato"}`);
       lines.push(`Llamo por telefono: ${registro.llamadoPorTelefono}`);
       lines.push(`Turnos examen: ${registro.turnosExamen || registro.fechaExamen || "Sin dato"}`);
       lines.push("");
@@ -715,9 +715,8 @@ function App() {
     ? String(alumnoActual.nivelACertificar || "").replace(/\s+/g, " ").trim()
     : "";
 
-  const programaDisplay = alumnoActual
-    ? `Programa ${tipoDisplay}${periodoCertificacion ? ` ${periodoCertificacion}` : ""}`
-    : "";
+  const nivelDe = (alumno) =>
+    String(alumno?.nivelACertificar || "").replace(/\s+/g, " ").trim();
 
   const iniciales = alumnoActual
     ? getInitials(alumnoActual.nombres, alumnoActual.apellidoPaterno)
@@ -995,10 +994,6 @@ function App() {
                     {formatRut(alumnoActual.rut, alumnoActual.dv)}
                   </p>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <span className="badge badge-brand">
-                      <span className="badge-dot" />
-                      {programaDisplay || "Programa sin dato"}
-                    </span>
                     {alumnoEnAmbosProgramas ? (
                       <span className="badge badge-muted">En ambos programas</span>
                     ) : null}
@@ -1045,12 +1040,22 @@ function App() {
               <div className="my-6 h-px bg-white/10" />
 
               <div className="grid gap-3 sm:grid-cols-2">
-                <InfoCard
-                  label="Nivel a certificar"
-                  value={alumnoActual.nivelACertificar || "Sin dato"}
-                  icon={<Icon name="award" />}
-                  accent
-                  span={2}
+                <ProgramaNivelCard
+                  programa={tipoDisplay}
+                  nivel={periodoCertificacion}
+                  otro={
+                    alumnoEnAmbosProgramas
+                      ? {
+                          programa:
+                            tipoEfectivo === "laboral" ? "Continuidad" : "Laboral",
+                          nivel: nivelDe(
+                            alumnoEncontrado[
+                              tipoEfectivo === "laboral" ? "continuidad" : "laboral"
+                            ],
+                          ),
+                        }
+                      : null
+                  }
                 />
                 <InfoCard
                   label="Celular"
@@ -1983,6 +1988,62 @@ function StatPill({ label, value, icon, tone = "brand" }) {
         {label}
       </div>
       <div className="text-xl font-bold text-white">{value}</div>
+    </div>
+  );
+}
+
+// Separa "2°Nivel Media (3° a 4°)" en "2° Nivel Media" y "3° a 4°".
+function partesNivel(nivel = "") {
+  const texto = String(nivel).replace(/°\s*/g, "° ").replace(/\s+/g, " ").trim();
+  const match = texto.match(/^(.*?)\s*\(([^)]*)\)\s*$/);
+  return match
+    ? { nombre: match[1].trim(), cursos: match[2].trim() }
+    : { nombre: texto, cursos: "" };
+}
+
+// Bloque principal: qué programa y qué nivel certifica el alumno, juntos y
+// rotulados para que no haya dudas de a qué programa corresponde el nivel.
+function ProgramaNivelCard({ programa, nivel, otro = null }) {
+  const { nombre, cursos } = partesNivel(nivel);
+
+  return (
+    <div className="rounded-2xl border border-cyan-400/30 bg-cyan-400/[0.08] p-5 sm:col-span-2">
+      <div className="grid gap-4 sm:grid-cols-[auto_1fr] sm:gap-8">
+        <div>
+          <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+            <span className="text-cyan-300">
+              <Icon name="branch" />
+            </span>
+            Programa
+          </div>
+          <div className="mt-1.5 text-2xl font-bold text-white">
+            {programa || "Sin dato"}
+          </div>
+        </div>
+        <div className="sm:border-l sm:border-white/10 sm:pl-8">
+          <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+            <span className="text-cyan-300">
+              <Icon name="award" />
+            </span>
+            Nivel a certificar
+          </div>
+          <div className="mt-1.5 text-2xl font-bold text-white">
+            {nombre || "Sin dato"}
+          </div>
+          {cursos ? (
+            <div className="mt-0.5 text-sm text-cyan-100/80">Cursos {cursos}</div>
+          ) : null}
+        </div>
+      </div>
+      {otro ? (
+        <div className="mt-4 border-t border-white/10 pt-3 text-sm text-slate-300">
+          También inscrito en <b className="text-white">{otro.programa}</b>:{" "}
+          {otro.nivel ? partesNivel(otro.nivel).nombre : "sin nivel"}
+          {otro.nivel && partesNivel(otro.nivel).cursos
+            ? ` (cursos ${partesNivel(otro.nivel).cursos})`
+            : ""}
+        </div>
+      ) : null}
     </div>
   );
 }
