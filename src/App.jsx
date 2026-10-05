@@ -27,12 +27,14 @@ const TURNOS_EXAMEN_POR_DIA = [
     dia: "Sábado 10 de octubre",
     turnos: [
       { id: "sabado-0900", hora: "09:00", cupo: 300 },
+      { id: "sabado-0910", hora: "09:10", cupo: 300, soloPrograma: "laboral" },
       { id: "sabado-1300", hora: "13:00", cupo: 300 },
     ],
   },
   {
     dia: "Domingo 11 de octubre",
     turnos: [
+      { id: "domingo-0910", hora: "09:10", cupo: 300, soloPrograma: "laboral" },
       { id: "domingo-1300", hora: "13:00", cupo: 200 },
       { id: "domingo-1700", hora: "17:00", cupo: 300 },
     ],
@@ -1150,7 +1152,16 @@ function App() {
                     </span>
                   </div>
                   <div className="space-y-2.5">
-                    {TURNOS_EXAMEN_POR_DIA.map((grupo) => {
+                    {TURNOS_EXAMEN_POR_DIA.map((grupoBase) => {
+                      // Algunos turnos son exclusivos de un programa (p. ej. 09:10 solo Laboral).
+                      const grupo = {
+                        ...grupoBase,
+                        turnos: grupoBase.turnos.filter(
+                          (turno) =>
+                            !turno.soloPrograma ||
+                            turno.soloPrograma === alumnoActual?.tipo,
+                        ),
+                      };
                       const usadosDia = grupo.turnos.reduce(
                         (acc, turno) => acc + (ocupacionPorTurno[turno.id] || 0),
                         0,
